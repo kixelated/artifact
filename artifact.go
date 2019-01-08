@@ -1,9 +1,12 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"sync"
 )
+
+var printMutex sync.Mutex
 
 var threadMutex sync.RWMutex
 var threadCount int
@@ -12,12 +15,6 @@ const threadSize = 32
 
 type Round struct {
 	Players []int
-}
-
-func NewRound(player int) (r *Round) {
-	r = new(Round)
-	r.Players = append(r.Players, player)
-	return r
 }
 
 func (r *Round) Copy() (r2 *Round) {
@@ -31,7 +28,7 @@ type Tournament struct {
 	RoundSize  int
 
 	Rounds []*Round
-	Played map[int]map[int]struct{}
+	Played [][]int
 }
 
 func NewTournament(playerSize int, roundSize int) (t *Tournament) {
@@ -39,9 +36,10 @@ func NewTournament(playerSize int, roundSize int) (t *Tournament) {
 	t.PlayerSize = playerSize
 	t.RoundSize = roundSize
 
-	t.Played = make(map[int]map[int]struct{})
+	t.Played = make([][]int, playerSize, playerSize)
+
 	for i := 0; i < t.PlayerSize; i += 1 {
-		t.Played[i] = make(map[int]struct{})
+		t.Played[i] = make([]int, playerSize, playerSize)
 	}
 
 	return t
@@ -51,38 +49,33 @@ func (t *Tournament) Copy() (t2 *Tournament) {
 	t2 = new(Tournament)
 	t2.PlayerSize = t.PlayerSize
 	t2.RoundSize = t.RoundSize
-
-	t2.Rounds = append([]*Round{}, t.Rounds...)
-	for i := range t2.Rounds {
-		t2.Rounds[i] = t2.Rounds[i].Copy()
-	}
-
-	t2.Played = make(map[int]map[int]struct{})
-
-	for player := range t.Played {
-		newMap := make(map[int]struct{})
-
-		for other := range t.Played[player] {
-			newMap[other] = struct{}{}
-		}
-
-		t2.Played[player] = newMap
-	}
-
+	t2.Played = t.Played
+	t2.Rounds = t.Rounds
 	return t2
 }
 
-func (t *Tournament) CanAdd(player int) (ok bool) {
+func (t *Tournament) CanAddRound() (ok bool) {
 	if len(t.Rounds) == 0 {
 		return true
 	}
 
 	pending := t.Rounds[len(t.Rounds)-1]
-	if len(pending.Players) == t.RoundSize {
-		return true
+	return len(pending.Players) >= t.RoundSize
+}
+
+func (t *Tournament) CanAddPlayer(player int) (ok bool) {
+	if len(t.Rounds) == 0 {
+		return false
 	}
 
-	played := t.Played[player]
+	// Insert rounds in order to avoid duplicate work.
+	for _, round := range t.Rounds {
+		if len(round.Players) > 0 && round.Players[0] > player {
+			return false
+		}
+	}
+
+	pending := t.Rounds[len(t.Rounds)-1]
 
 	for _, other := range pending.Players {
 		// Only allow inserting in order to avoid duplicate work.
@@ -90,8 +83,8 @@ func (t *Tournament) CanAdd(player int) (ok bool) {
 			return false
 		}
 
-		_, ok := played[other]
-		if ok {
+		// Prevent rematches.
+		if t.Played[player][other] > 0 || t.Played[other][player] > 0 {
 			return false
 		}
 	}
@@ -99,47 +92,101 @@ func (t *Tournament) CanAdd(player int) (ok bool) {
 	return true
 }
 
-func (t *Tournament) Add(player int) {
-	if len(t.Rounds) == 0 {
-		t.Rounds = append(t.Rounds, NewRound(player))
-		return
-	}
+func (t *Tournament) AddRound() (t2 *Tournament) {
+	t2 = new(Tournament)
+	*t2 = *t
 
-	pending := t.Rounds[len(t.Rounds)-1]
-	if len(pending.Players) == t.RoundSize {
-		t.Rounds = append(t.Rounds, NewRound(player))
-		return
-	}
+	// Make a copy of the rounds array.
+	t2.Rounds = append([]*Round{}, t2.Rounds...)
+	t2.Rounds = append(t2.Rounds, new(Round))
 
-	for _, other := range pending.Players {
-		t.Played[player][other] = struct{}{}
-		t.Played[other][player] = struct{}{}
-	}
-
-	pending.Players = append(pending.Players, player)
+	return t2
 }
 
-func (t *Tournament) Score() int {
-	sum := len(t.Rounds)
+func (t *Tournament) AddPlayer(player int) (t2 *Tournament) {
+	t2 = new(Tournament)
+	*t2 = *t
 
-	for _, r := range t.Rounds {
-		sum += len(r.Players)
+	pending := t2.Rounds[len(t2.Rounds)-1]
+
+	// Make a copy of the played array.
+	t2.Played = append([][]int{}, t2.Played...)
+
+	// Make a copy of the player's played array.
+	t2.Played[player] = append([]int{}, t2.Played[player]...)
+
+	for _, other := range pending.Players {
+		// Only update played on one side to prevent extra copies.
+		t2.Played[player][other] += 1
 	}
 
-	return sum
+	// Make a copy of the rounds array.
+	t2.Rounds = append([]*Round{}, t2.Rounds...)
+
+	// Make a copy of the last round.
+	pending = pending.Copy()
+	pending.Players = append(pending.Players, player)
+
+	// Add it back to the rounds.
+	t2.Rounds[len(t2.Rounds)-1] = pending
+
+	return t2
+}
+
+func (t *Tournament) Score() (score int) {
+	matches := make([]int, t.PlayerSize)
+
+	for _, r := range t.Rounds {
+		// Make sure all of the rounds are filled.
+		if len(r.Players) < t.RoundSize {
+			return 0
+		}
+
+		// Number of matches for each player. (round-robin means play everybody else)
+		playerMatches := len(r.Players) - 1
+
+		for _, player := range r.Players {
+			matches[player] += playerMatches
+		}
+
+		// Number of matches in the round total.
+		roundMatches := (playerMatches*playerMatches + playerMatches) / 2
+		score += roundMatches
+	}
+
+	// Make sure all players have the same number of matches.
+	expected := matches[0]
+	for _, match := range matches[1:] {
+		if expected != match {
+			return 0
+		}
+	}
+
+	score += len(t.Rounds)
+
+	return score
 }
 
 func (t *Tournament) Mutate() (best *Tournament) {
-	results := make(chan *Tournament, t.PlayerSize)
+	//t.Print()
+
+	results := make(chan *Tournament, t.PlayerSize+1)
+
+	if t.CanAddRound() {
+		// TODO in parallel
+		t2 := t.AddRound()
+		results <- t2.Mutate()
+	} else {
+		results <- nil
+	}
 
 	for i := 0; i < t.PlayerSize; i += 1 {
-		if !t.CanAdd(i) {
+		if !t.CanAddPlayer(i) {
 			results <- nil
 			continue
 		}
 
-		t2 := t.Copy()
-		t2.Add(i)
+		t2 := t.AddPlayer(i)
 
 		threadMutex.RLock()
 		parallel := threadCount < threadSize
@@ -160,15 +207,11 @@ func (t *Tournament) Mutate() (best *Tournament) {
 
 		if parallel {
 			go func() {
-				fmt.Println("new thread")
-
 				results <- t2.Mutate()
 
 				threadMutex.Lock()
 				threadCount -= 1
 				threadMutex.Unlock()
-
-				fmt.Println("dead thread")
 			}()
 		} else {
 			results <- t2.Mutate()
@@ -178,7 +221,7 @@ func (t *Tournament) Mutate() (best *Tournament) {
 	best = t
 	score := t.Score()
 
-	for i := 0; i < t.PlayerSize; i += 1 {
+	for i := 0; i < t.PlayerSize+1; i += 1 {
 		b2 := <-results
 		if b2 == nil {
 			continue
@@ -196,6 +239,9 @@ func (t *Tournament) Mutate() (best *Tournament) {
 }
 
 func (t *Tournament) Print() {
+	printMutex.Lock()
+	defer printMutex.Unlock()
+
 	for _, r := range t.Rounds {
 		for _, p := range r.Players {
 			fmt.Printf("%d ", p)
@@ -208,7 +254,18 @@ func (t *Tournament) Print() {
 }
 
 func main() {
-	t := NewTournament(9, 3)
+	players := flag.Int("players", 0, "number of players")
+	size := flag.Int("size", 4, "size of each group")
+	flag.Parse()
+
+	if *players == 0 {
+		fmt.Println("missing number of players")
+		return
+	}
+
+	t := NewTournament(*players, *size)
 	b := t.Mutate()
+
+	fmt.Println("result:")
 	b.Print()
 }
