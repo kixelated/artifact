@@ -107,17 +107,17 @@ func (t Tournament) AddPlayer(player int) (t2 Tournament) {
 func (t Tournament) Score() (score int) {
 	matches := make([]int, t.PlayerSize)
 
-	for _, r := range t.Groups {
+	for _, g := range t.Groups {
 		// Make sure all of the groups are filled.
-		if len(r.Players) < t.GroupSize {
+		if len(g.Players) < t.GroupSize {
 			return 0
 		}
 
 		// Number of matches for each player.
 		// round-robin means play everybody else
-		playerMatches := len(r.Players) - 1
+		playerMatches := len(g.Players) - 1
 
-		for _, player := range r.Players {
+		for _, player := range g.Players {
 			matches[player] += playerMatches
 		}
 
@@ -181,8 +181,8 @@ func (t Tournament) Print() {
 	printMutex.Lock()
 	defer printMutex.Unlock()
 
-	for _, r := range t.Groups {
-		for _, p := range r.Players {
+	for _, g := range t.Groups {
+		for _, p := range g.Players {
 			fmt.Printf("%d ", p)
 		}
 
