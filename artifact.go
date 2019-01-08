@@ -40,7 +40,7 @@ func (t Tournament) CanAddGroup() (ok bool) {
 		return false
 	}
 
-	for _, group := range t.Groups {
+	for _, group := range t.Groups[:len(t.Groups)-1] {
 		// TODO for now, make sure all group sizes are equal
 		if len(group.Players) != len(pending.Players) {
 			return false
