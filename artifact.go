@@ -3,13 +3,14 @@ package main
 import (
 	"flag"
 	"fmt"
+	"math/bits"
 	"sync"
+	"sync/atomic"
 )
 
 var printMutex sync.Mutex
 
-var threadMutex sync.RWMutex
-var threadCount int
+var mutateCount uint64
 
 const threadSize = 32
 
@@ -60,6 +61,14 @@ func (t *Tournament) CanAddRound() (ok bool) {
 	}
 
 	pending := t.Rounds[len(t.Rounds)-1]
+
+	for _, round := range t.Rounds {
+		// TODO for now, make sure all round sizes are equal
+		if len(round.Players) != len(pending.Players) {
+			return false
+		}
+	}
+
 	return len(pending.Players) >= t.RoundSize
 }
 
@@ -170,59 +179,31 @@ func (t *Tournament) Score() (score int) {
 func (t *Tournament) Mutate() (best *Tournament) {
 	//t.Print()
 
-	results := make(chan *Tournament, t.PlayerSize+1)
+	newCount := atomic.AddUint64(&mutateCount, 1)
+	if bits.OnesCount64(newCount) == 1 {
+		fmt.Printf("mutations: %d\n", newCount)
+	}
+
+	results := make([]*Tournament, 0, t.PlayerSize+1)
 
 	if t.CanAddRound() {
-		// TODO in parallel
 		t2 := t.AddRound()
-		results <- t2.Mutate()
-	} else {
-		results <- nil
+		results = append(results, t2.Mutate())
 	}
 
 	for i := 0; i < t.PlayerSize; i += 1 {
 		if !t.CanAddPlayer(i) {
-			results <- nil
 			continue
 		}
 
 		t2 := t.AddPlayer(i)
-
-		threadMutex.RLock()
-		parallel := threadCount < threadSize
-		threadMutex.RUnlock()
-
-		// Actually grab the lock to confirm our thread.
-		if parallel {
-			threadMutex.Lock()
-
-			if threadCount < threadSize {
-				threadCount += 1
-			} else {
-				parallel = false
-			}
-
-			threadMutex.Unlock()
-		}
-
-		if parallel {
-			go func() {
-				results <- t2.Mutate()
-
-				threadMutex.Lock()
-				threadCount -= 1
-				threadMutex.Unlock()
-			}()
-		} else {
-			results <- t2.Mutate()
-		}
+		results = append(results, t2.Mutate())
 	}
 
 	best = t
 	score := t.Score()
 
-	for i := 0; i < t.PlayerSize+1; i += 1 {
-		b2 := <-results
+	for _, b2 := range results {
 		if b2 == nil {
 			continue
 		}
