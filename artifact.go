@@ -30,19 +30,39 @@ type Tournament struct {
 	Played [maxPlayers]uint16 // bitset
 }
 
-func (t Tournament) CanAddGroup() (ok bool) {
+func (t Tournament) CanAddGroup(player int) (ok bool) {
 	if len(t.Groups) == 0 {
 		return true
 	}
 
 	pending := t.Groups[len(t.Groups)-1]
-	if len(pending.Players) < t.GroupSize {
+	if len(pending.Players) != t.GroupSize {
 		return false
 	}
 
-	for _, group := range t.Groups[:len(t.Groups)-1] {
-		// TODO for now, make sure all group sizes are equal
-		if len(group.Players) != len(pending.Players) {
+	/*
+		for _, group := range t.Groups[:len(t.Groups)-1] {
+			// TODO for now, make sure all group sizes are equal
+			if len(group.Players) != len(pending.Players) {
+				return false
+			}
+		}
+	*/
+
+	for _, group := range t.Groups {
+		leader := group.Players[0]
+
+		// Insert groups in order to avoid duplicate work.
+		if leader > player {
+			return false
+		}
+	}
+
+	myMatches := bits.OnesCount16(t.Played[player])
+
+	for i := 0; i < player; i += 1 {
+		otherMatches := bits.OnesCount16(t.Played[i])
+		if otherMatches < myMatches {
 			return false
 		}
 	}
@@ -55,14 +75,10 @@ func (t Tournament) CanAddPlayer(player int) (ok bool) {
 		return false
 	}
 
-	// Insert groups in order to avoid duplicate work.
-	for _, group := range t.Groups {
-		if len(group.Players) > 0 && group.Players[0] > player {
-			return false
-		}
-	}
-
 	pending := t.Groups[len(t.Groups)-1]
+	if len(pending.Players) >= t.GroupSize {
+		return false
+	}
 
 	for _, other := range pending.Players {
 		// Only allow inserting in order to avoid duplicate work.
@@ -79,10 +95,12 @@ func (t Tournament) CanAddPlayer(player int) (ok bool) {
 	return true
 }
 
-func (t Tournament) AddGroup() (t2 Tournament) {
+func (t Tournament) AddGroup(player int) (t2 Tournament) {
+	g := Group{Players: []int{player}}
+
 	// Make a copy of the groups array.
 	t.Groups = append([]Group{}, t.Groups...)
-	t.Groups = append(t.Groups, Group{})
+	t.Groups = append(t.Groups, g)
 
 	return t
 }
@@ -150,27 +168,25 @@ func (t Tournament) Mutate() (best Tournament) {
 	best = t
 	score := t.Score()
 
-	if t.CanAddGroup() {
-		t2 := t.AddGroup().Mutate()
-		s2 := t2.Score()
-
-		if s2 > score {
-			best = t2
-			score = s2
-		}
-	}
-
 	for i := 0; i < t.PlayerSize; i += 1 {
-		if !t.CanAddPlayer(i) {
-			continue
+		if t.CanAddGroup(i) {
+			t2 := t.AddGroup(i).Mutate()
+			s2 := t2.Score()
+
+			if s2 > score {
+				best = t2
+				score = s2
+			}
 		}
 
-		t2 := t.AddPlayer(i).Mutate()
-		s2 := t2.Score()
+		if t.CanAddPlayer(i) {
+			t2 := t.AddPlayer(i).Mutate()
+			s2 := t2.Score()
 
-		if s2 > score {
-			best = t2
-			score = s2
+			if s2 > score {
+				best = t2
+				score = s2
+			}
 		}
 	}
 
