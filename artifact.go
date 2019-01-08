@@ -175,11 +175,17 @@ func (t *Tournament) Mutate() (best *Tournament) {
 		fmt.Printf("mutations: %d\n", newCount)
 	}
 
-	results := make([]*Tournament, 0, t.PlayerSize+1)
+	best = t
+	score := t.Score()
 
 	if t.CanAddRound() {
-		t2 := t.AddRound()
-		results = append(results, t2.Mutate())
+		t2 := t.AddRound().Mutate()
+		s2 := t2.Score()
+
+		if s2 > score {
+			score = s2
+			best = t2
+		}
 	}
 
 	for i := 0; i < t.PlayerSize; i += 1 {
@@ -187,23 +193,12 @@ func (t *Tournament) Mutate() (best *Tournament) {
 			continue
 		}
 
-		t2 := t.AddPlayer(i)
-		results = append(results, t2.Mutate())
-	}
-
-	best = t
-	score := t.Score()
-
-	for _, b2 := range results {
-		if b2 == nil {
-			continue
-		}
-
-		s2 := b2.Score()
+		t2 := t.AddPlayer(i).Mutate()
+		s2 := t2.Score()
 
 		if s2 > score {
-			best = b2
 			score = s2
+			best = t2
 		}
 	}
 
