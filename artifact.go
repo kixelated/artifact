@@ -64,6 +64,9 @@ func (t *Tournament) CanAddRound() (ok bool) {
 	}
 
 	pending := t.Rounds[len(t.Rounds)-1]
+	if len(pending.Players) < t.RoundSize {
+		return false
+	}
 
 	for _, round := range t.Rounds {
 		// TODO for now, make sure all round sizes are equal
@@ -72,7 +75,7 @@ func (t *Tournament) CanAddRound() (ok bool) {
 		}
 	}
 
-	return len(pending.Players) >= t.RoundSize
+	return true
 }
 
 func (t *Tournament) CanAddPlayer(player int) (ok bool) {
@@ -128,7 +131,7 @@ func (t *Tournament) AddPlayer(player int) (t2 *Tournament) {
 	t2.Played[player] = append([]int{}, t2.Played[player]...)
 
 	for _, other := range pending.Players {
-		// Only update played on one side to prevent extra copies.
+		// Only update played on one side to avoid extra copies.
 		t2.Played[player][other] += 1
 	}
 
