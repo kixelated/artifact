@@ -16,6 +16,7 @@ var printMutex sync.Mutex
 var mutateCount uint64
 
 const threadSize = 32
+const maxPlayers = 16 // TODO use
 
 type Round struct {
 	Players []int
@@ -32,29 +33,19 @@ type Tournament struct {
 	RoundSize  int
 
 	Rounds []*Round
-	Played [][]int
+	Played [maxPlayers]uint16 // bitset
 }
 
 func NewTournament(playerSize int, roundSize int) (t *Tournament) {
 	t = new(Tournament)
 	t.PlayerSize = playerSize
 	t.RoundSize = roundSize
-
-	t.Played = make([][]int, playerSize, playerSize)
-
-	for i := 0; i < t.PlayerSize; i += 1 {
-		t.Played[i] = make([]int, playerSize, playerSize)
-	}
-
 	return t
 }
 
 func (t *Tournament) Copy() (t2 *Tournament) {
 	t2 = new(Tournament)
-	t2.PlayerSize = t.PlayerSize
-	t2.RoundSize = t.RoundSize
-	t2.Played = t.Played
-	t2.Rounds = t.Rounds
+	*t2 = *t
 	return t2
 }
 
@@ -99,7 +90,7 @@ func (t *Tournament) CanAddPlayer(player int) (ok bool) {
 		}
 
 		// Prevent rematches.
-		if t.Played[player][other] > 0 || t.Played[other][player] > 0 {
+		if t.Played[player]&(1<<uint(other)) != 0 {
 			return false
 		}
 	}
@@ -124,15 +115,9 @@ func (t *Tournament) AddPlayer(player int) (t2 *Tournament) {
 
 	pending := t2.Rounds[len(t2.Rounds)-1]
 
-	// Make a copy of the played array.
-	t2.Played = append([][]int{}, t2.Played...)
-
-	// Make a copy of the player's played array.
-	t2.Played[player] = append([]int{}, t2.Played[player]...)
-
 	for _, other := range pending.Players {
-		// Only update played on one side to avoid extra copies.
-		t2.Played[player][other] += 1
+		t2.Played[player] |= 1 << uint(other)
+		t2.Played[other] |= 1 << uint(player)
 	}
 
 	// Make a copy of the rounds array.
@@ -248,6 +233,10 @@ func main() {
 
 	if *players == 0 {
 		log.Fatal("missing number of players")
+	}
+
+	if *players > 16 {
+		log.Fatal("too many players")
 	}
 
 	if *profile != "" {
