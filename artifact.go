@@ -3,7 +3,10 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"math/bits"
+	"os"
+	"runtime/pprof"
 	"sync"
 	"sync/atomic"
 )
@@ -237,11 +240,21 @@ func (t *Tournament) Print() {
 func main() {
 	players := flag.Int("players", 0, "number of players")
 	size := flag.Int("size", 4, "size of each group")
+	profile := flag.String("profile", "", "write cpu profile")
 	flag.Parse()
 
 	if *players == 0 {
-		fmt.Println("missing number of players")
-		return
+		log.Fatal("missing number of players")
+	}
+
+	if *profile != "" {
+		f, err := os.Create(*profile)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
 	}
 
 	t := NewTournament(*players, *size)
