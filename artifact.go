@@ -68,7 +68,7 @@ func (t *Tournament) CanAddGroup(player int) (ok bool) {
 	}
 
 	pending := t.Groups[len(t.Groups)-1]
-	if len(pending.Players) != t.GroupSize {
+	if len(pending.Players) < t.GroupSize {
 		return false
 	}
 
@@ -287,7 +287,7 @@ func main() {
 	t := NewTournament(*players, *size)
 	b := t.Mutate()
 
-	fmt.Printf("mutations: %d\n", mutateCount)
+	fmt.Printf("mutations: %d\n\n", mutateCount)
 
 	if b == nil {
 		log.Fatal("no result")
