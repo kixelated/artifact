@@ -19,27 +19,36 @@ const threadSize = 32
 const maxPlayers = 16 // TODO use
 
 type Group struct {
-	Players []int
+	players uint32
+	size    int
 }
 
-func NewGroup(player int) (g *Group) {
-	g = new(Group)
-	g.Players = []int{player}
-	return g
+func (g *Group) Add(player int) {
+	g.players |= (uint32(player) & 0xf) << (uint(g.size) * 4)
+	g.size += 1
 }
 
-func (g *Group) Copy() (g2 *Group) {
-	g2 = new(Group)
-	*g2 = *g
-	g2.Players = append([]int{}, g.Players...)
-	return g2
+func (g *Group) Remove() (player int) {
+	g.size -= 1
+	player = g.Player(g.size)
+	g.players &= ^(0xf << (4 * uint(g.size)))
+
+	return player
+}
+
+func (g Group) Player(index int) (player int) {
+	return int((g.players >> (uint(index) * 4)) & 0xf)
+}
+
+func (g Group) Size() int {
+	return g.size
 }
 
 type Tournament struct {
 	PlayerSize int
 	GroupSize  int
 
-	Groups []*Group
+	Groups []Group
 	Played [maxPlayers]uint16
 }
 
@@ -54,10 +63,8 @@ func (t *Tournament) Copy() (t2 *Tournament) {
 	t2 = new(Tournament)
 	*t2 = *t
 
-	t2.Groups = make([]*Group, len(t.Groups))
-	for i := range t.Groups {
-		t2.Groups[i] = t.Groups[i].Copy()
-	}
+	// Make a copy of the groups slice
+	t2.Groups = append([]Group{}, t.Groups...)
 
 	return t2
 }
@@ -68,21 +75,12 @@ func (t *Tournament) CanAddGroup(player int) (ok bool) {
 	}
 
 	pending := t.Groups[len(t.Groups)-1]
-	if len(pending.Players) < t.GroupSize {
+	if pending.Size() < t.GroupSize {
 		return false
 	}
 
-	/*
-		for _, group := range t.Groups[:len(t.Groups)-1] {
-			// TODO for now, make sure all group sizes are equal
-			if len(group.Players) != len(pending.Players) {
-				return false
-			}
-		}
-	*/
-
 	for _, group := range t.Groups {
-		leader := group.Players[0]
+		leader := group.Player(0)
 
 		// Insert groups in order to avoid duplicate work.
 		if leader > player {
@@ -108,11 +106,13 @@ func (t Tournament) CanAddPlayer(player int) (ok bool) {
 	}
 
 	pending := t.Groups[len(t.Groups)-1]
-	if len(pending.Players) >= t.GroupSize {
+	if pending.Size() >= t.GroupSize {
 		return false
 	}
 
-	for _, other := range pending.Players {
+	for i := 0; i < pending.Size(); i += 1 {
+		other := pending.Player(i)
+
 		// Only allow inserting in order to avoid duplicate work.
 		if player <= other {
 			return false
@@ -128,20 +128,24 @@ func (t Tournament) CanAddPlayer(player int) (ok bool) {
 }
 
 func (t *Tournament) AddGroup(player int) {
-	g := NewGroup(player)
+	g := Group{}
+	g.Add(player)
+
 	t.Groups = append(t.Groups, g)
 }
 
 func (t *Tournament) AddPlayer(player int) {
-	pending := t.Groups[len(t.Groups)-1]
+	pending := &t.Groups[len(t.Groups)-1]
 
-	for _, other := range pending.Players {
+	for i := 0; i < pending.Size(); i += 1 {
+		other := pending.Player(i)
+
 		t.Played[player] |= 1 << uint(other)
 		t.Played[other] |= 1 << uint(player)
 	}
 
 	// Append to the last group in the array.
-	pending.Players = append(pending.Players, player)
+	pending.Add(player)
 }
 
 func (t *Tournament) RemoveGroup() {
@@ -149,12 +153,13 @@ func (t *Tournament) RemoveGroup() {
 }
 
 func (t *Tournament) RemovePlayer() {
-	pending := t.Groups[len(t.Groups)-1]
+	pending := &t.Groups[len(t.Groups)-1]
 
-	player := pending.Players[len(pending.Players)-1]
-	pending.Players = pending.Players[:len(pending.Players)-1]
+	player := pending.Remove()
 
-	for _, other := range pending.Players {
+	for i := 0; i < pending.Size(); i += 1 {
+		other := pending.Player(i)
+
 		t.Played[player] &= ^(1 << uint(other))
 		t.Played[other] &= ^(1 << uint(player))
 	}
@@ -165,15 +170,16 @@ func (t Tournament) Score() (score int) {
 
 	for _, g := range t.Groups {
 		// Make sure all of the groups are filled.
-		if len(g.Players) < t.GroupSize {
+		if g.Size() < t.GroupSize {
 			return 0
 		}
 
 		// Number of matches for each player.
 		// round-robin means play everybody else
-		playerMatches := len(g.Players) - 1
+		playerMatches := g.Size() - 1
 
-		for _, player := range g.Players {
+		for i := 0; i < g.Size(); i += 1 {
+			player := g.Player(i)
 			matches[player] += playerMatches
 		}
 
@@ -245,12 +251,13 @@ func (t *Tournament) Mutate() (best *Tournament) {
 	return best
 }
 
-func (t Tournament) Print() {
+func (t *Tournament) Print() {
 	printMutex.Lock()
 	defer printMutex.Unlock()
 
 	for _, g := range t.Groups {
-		for _, p := range g.Players {
+		for i := 0; i < g.Size(); i += 1 {
+			p := g.Player(i)
 			fmt.Printf("%d ", p)
 		}
 
