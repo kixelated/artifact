@@ -46,9 +46,8 @@ type Tournament struct {
 	PlayerSize int
 	GroupSize  int
 
-	Groups     []Group
-	Played     [maxPlayers]uint16 // bitmask if they've played each player
-	GroupCount [maxPlayers]uint8  // number of groups for each player
+	Groups []Group
+	Played [maxPlayers]uint16 // bitmask if they've played each player
 }
 
 func NewTournament(playerSize int, groupSize int) (t *Tournament) {
@@ -151,7 +150,6 @@ func (t *Tournament) AddGroup(player int) {
 	g.Add(player)
 
 	t.Groups = append(t.Groups, g)
-	t.GroupCount[player] += 1
 }
 
 func (t *Tournament) AddPlayer(player int) {
@@ -166,23 +164,16 @@ func (t *Tournament) AddPlayer(player int) {
 
 	// Append to the last group in the array.
 	pending.Add(player)
-
-	t.GroupCount[player] += 1
 }
 
 func (t *Tournament) RemoveGroup() {
-	pending := t.Groups[len(t.Groups)-1]
-	player := pending.Player(0)
-
 	t.Groups = t.Groups[:len(t.Groups)-1]
-	t.GroupCount[player] -= 1
 }
 
 func (t *Tournament) RemovePlayer() {
 	pending := &t.Groups[len(t.Groups)-1]
 
 	player := pending.Remove()
-	t.GroupCount[player] -= 1
 
 	for i := 0; i < pending.Size(); i += 1 {
 		other := pending.Player(i)
@@ -203,10 +194,10 @@ func (t Tournament) Score() (score int) {
 	}
 
 	// Make sure all players have the same number of matches.
-	count := t.GroupCount[0]
+	count := bits.OnesCount16(t.Played[0])
 
 	for i := 1; i < t.PlayerSize; i += 1 {
-		if t.GroupCount[i] != count {
+		if bits.OnesCount16(t.Played[i]) != count {
 			return 0
 		}
 	}
