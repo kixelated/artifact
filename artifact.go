@@ -11,12 +11,10 @@ import (
 	"sync/atomic"
 )
 
+const maxPlayers = 16
+
 var printMutex sync.Mutex
-
 var mutateCount uint64
-
-const threadSize = 32
-const maxPlayers = 16 // TODO use
 
 type Group struct {
 	players uint32 // every 4 bits is a player id (max 16)
@@ -60,9 +58,8 @@ func NewTournament(playerSize int, groupSize int) (t *Tournament) {
 	return t
 }
 
-func (t *Tournament) Copy() (t2 *Tournament) {
-	t2 = new(Tournament)
-	*t2 = *t
+func (t Tournament) Copy() (t2 Tournament) {
+	t2 = t
 
 	// Make a copy of the groups slice
 	t2.Groups = append([]Group{}, t.Groups...)
@@ -197,7 +194,7 @@ func (t Tournament) Score() (score int) {
 	return int(count)*t.PlayerSize + len(t.Groups)
 }
 
-func (t *Tournament) Mutate() (best *Tournament) {
+func (t *Tournament) Mutate() (best Tournament) {
 	//t.Print()
 
 	newCount := atomic.AddUint64(&mutateCount, 1)
@@ -205,7 +202,6 @@ func (t *Tournament) Mutate() (best *Tournament) {
 		fmt.Printf("mutations: %d\n", newCount)
 	}
 
-	best = nil
 	score := 0
 
 	for i := 0; i < t.PlayerSize; i += 1 {
@@ -213,12 +209,10 @@ func (t *Tournament) Mutate() (best *Tournament) {
 			t.AddGroup(i)
 
 			t2 := t.Mutate()
-			if t2 != nil {
-				s2 := t2.Score()
-				if s2 > score {
-					best = t2
-					score = s2
-				}
+			s2 := t2.Score()
+			if s2 > score {
+				best = t2
+				score = s2
 			}
 
 			t.RemoveGroup()
@@ -228,12 +222,10 @@ func (t *Tournament) Mutate() (best *Tournament) {
 			t.AddPlayer(i)
 
 			t2 := t.Mutate()
-			if t2 != nil {
-				s2 := t2.Score()
-				if s2 > score {
-					best = t2
-					score = s2
-				}
+			s2 := t2.Score()
+			if s2 > score {
+				best = t2
+				score = s2
 			}
 
 			t.RemovePlayer()
@@ -273,7 +265,7 @@ func main() {
 		log.Fatal("missing number of players")
 	}
 
-	if *players > 16 {
+	if *players > maxPlayers {
 		log.Fatal("too many players")
 	}
 
@@ -291,10 +283,6 @@ func main() {
 	b := t.Mutate()
 
 	fmt.Printf("mutations: %d\n\n", mutateCount)
-
-	if b == nil {
-		log.Fatal("no result")
-	}
 
 	fmt.Println("result:")
 	b.Print()
