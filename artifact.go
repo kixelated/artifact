@@ -108,6 +108,27 @@ func (t Tournament) CanAddPlayer(player int) (ok bool) {
 		return false
 	}
 
+	// Prevent duplicate work by scanning the previous group.
+	if len(t.Groups) >= 2 {
+		prev := t.Groups[len(t.Groups)-2]
+		similar := true
+
+		// The idea is that we should do work in ascending order.
+		// If the previous group was: "0 3 4":
+		// Then we know that we must have tried "0 1 *" and "0 2 *" in another branch.
+
+		for i := 0; i < pending.Size(); i += 1 {
+			if pending.Player(i) > prev.Player(i) {
+				similar = false
+				break
+			}
+		}
+
+		if similar && player < prev.Player(pending.Size()) {
+			return false
+		}
+	}
+
 	for i := 0; i < pending.Size(); i += 1 {
 		other := pending.Player(i)
 
