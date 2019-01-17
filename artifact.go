@@ -76,6 +76,11 @@ func (t *Tournament) CanAddGroup(player int) (ok bool) {
 		return false
 	}
 
+	// See if it's even possible to fill the group with remaining players.
+	if t.PlayerSize-player < t.GroupSize {
+		return false
+	}
+
 	for _, group := range t.Groups {
 		leader := group.Player(0)
 
@@ -104,6 +109,11 @@ func (t Tournament) CanAddPlayer(player int) (ok bool) {
 
 	pending := t.Groups[len(t.Groups)-1]
 	if pending.Size() >= t.GroupSize {
+		return false
+	}
+
+	// See if it's even possible to fill the group with remaining players.
+	if t.PlayerSize-player < t.GroupSize-pending.Size() {
 		return false
 	}
 
