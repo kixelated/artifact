@@ -8,17 +8,22 @@ import (
 	"runtime/pprof"
 	"sort"
 
-	"github.com/frrad/gophersat/bf"
+	//"github.com/frrad/gophersat/bf"
+	"github.com/crillab/gophersat/maxsat"
 )
 
 func main() {
-	players := flag.Int("players", 9, "number of players")
+	players := flag.Int("players", 8, "number of players")
 	size := flag.Int("size", 3, "size of each group")
 	profile := flag.String("profile", "", "write cpu profile")
 	flag.Parse()
 
 	if *players == 0 {
 		log.Fatal("missing number of players")
+	}
+
+	if *size != 3 {
+		log.Fatal("not supported")
 	}
 
 	if *profile != "" {
@@ -48,30 +53,34 @@ func groupName(players ...int) (v string) {
 }
 
 func solve(players int, size int) (err error) {
-	f := bf.True
+	c := []maxsat.Constr{}
 
-	// Make sure we play everybody at least once.
 	for i := 0; i < players; i += 1 {
-		for j := 0; j < players; j += 1 {
-			if i == j {
-				continue
-			}
-
-			groups := make([]string, 0, players*(players-2))
+		for j := i + 1; j < players; j += 1 {
+			lits := make([]maxsat.Lit, 0, players-2)
 
 			for k := 0; k < players; k += 1 {
-				if k == i || k == j {
+				if i == k || j == k {
 					continue
 				}
 
-				groups = append(groups, groupName(i, j, k))
+				group := groupName(i, j, k)
+				lits = append(lits, maxsat.Var(group))
 			}
 
-			f = bf.And(f, bf.Unique(groups...))
+			c = append(c, maxsat.SoftClause(lits...))
+
+			for k, l1 := range lits[:len(lits)-1] {
+				for _, l2 := range lits[k+1:] {
+					c = append(c, maxsat.HardClause(l1.Negation(), l2.Negation()))
+				}
+			}
 		}
 	}
 
-	model := bf.Solve(f)
+	p := maxsat.New(c...)
+
+	model, _ := p.Solve()
 	if model == nil {
 		return fmt.Errorf("no solution")
 	}
@@ -85,20 +94,6 @@ func solve(players int, size int) (err error) {
 			}
 		}
 	}
-
-	/*
-		out, err := os.Create("artifact.cnf")
-		if err != nil {
-			return err
-		}
-
-		defer out.Close()
-
-		err = bf.Dimacs(f, out)
-		if err != nil {
-			return err
-		}
-	*/
 
 	return nil
 }
