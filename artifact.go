@@ -43,8 +43,9 @@ func (g Group) Size() int {
 }
 
 type Tournament struct {
-	PlayerSize int
-	GroupSize  int
+	PlayerSize   int
+	MinGroupSize int
+	MaxGroupSize int
 
 	Groups []Group
 	Played [maxPlayers]uint16 // bitmask if they've played each player
@@ -53,7 +54,8 @@ type Tournament struct {
 func NewTournament(playerSize int, groupSize int) (t *Tournament) {
 	t = new(Tournament)
 	t.PlayerSize = playerSize
-	t.GroupSize = groupSize
+	t.MinGroupSize = groupSize
+	t.MaxGroupSize = playerSize
 	return t
 }
 
@@ -72,12 +74,12 @@ func (t *Tournament) CanAddGroup(player int) (ok bool) {
 	}
 
 	pending := t.Groups[len(t.Groups)-1]
-	if pending.Size() < t.GroupSize {
+	if pending.Size() < t.MinGroupSize {
 		return false
 	}
 
 	// See if it's even possible to fill the group with remaining players.
-	if t.PlayerSize-player < t.GroupSize {
+	if t.PlayerSize-player < t.MinGroupSize {
 		return false
 	}
 
@@ -108,12 +110,12 @@ func (t Tournament) CanAddPlayer(player int) (ok bool) {
 	}
 
 	pending := t.Groups[len(t.Groups)-1]
-	if pending.Size() >= t.GroupSize {
+	if pending.Size() >= t.MaxGroupSize {
 		return false
 	}
 
 	// See if it's even possible to fill the group with remaining players.
-	if t.PlayerSize-player < t.GroupSize-pending.Size() {
+	if t.PlayerSize-player < t.MinGroupSize-pending.Size() {
 		return false
 	}
 
@@ -199,7 +201,7 @@ func (t Tournament) Score() (score int) {
 	}
 
 	// Make sure all of the groups are filled.
-	if t.Groups[len(t.Groups)-1].Size() < t.GroupSize {
+	if t.Groups[len(t.Groups)-1].Size() < t.MinGroupSize {
 		return 0
 	}
 
@@ -212,13 +214,12 @@ func (t Tournament) Score() (score int) {
 		}
 	}
 
-	// Score by the total number of matches and prefer more groups.
-	return int(count)*t.PlayerSize + len(t.Groups)
+	// Score based on the number of matches plus number of groups.
+	// If we only score based on number of matches, then full round-robin always wins.
+	return int(count)*len(t.Groups) + len(t.Groups)
 }
 
 func (t *Tournament) Mutate() (best Tournament) {
-	//t.Print()
-
 	newCount := atomic.AddUint64(&mutateCount, 1)
 	if bits.OnesCount64(newCount) == 1 {
 		fmt.Printf("mutations: %d\n", newCount)
@@ -227,6 +228,7 @@ func (t *Tournament) Mutate() (best Tournament) {
 	score := 0
 
 	for i := 0; i < t.PlayerSize; i += 1 {
+
 		if t.CanAddGroup(i) {
 			t.AddGroup(i)
 
