@@ -8,7 +8,7 @@ import (
 	"runtime/pprof"
 	"sort"
 
-	"github.com/crillab/gophersat/bf"
+	"github.com/frrad/gophersat/bf"
 )
 
 func main() {
@@ -31,7 +31,10 @@ func main() {
 		defer pprof.StopCPUProfile()
 	}
 
-	solve(*players, *size)
+	err := solve(*players, *size)
+	if err != nil {
+		log.Fatal(err)
+	}
 }
 
 func groupName(players ...int) (v string) {
@@ -44,21 +47,8 @@ func groupName(players ...int) (v string) {
 	return v[:len(v)-1]
 }
 
-func solve(players int, size int) {
+func solve(players int, size int) (err error) {
 	f := bf.True
-
-	// Prevent a player from being in the same group twice.
-	/*
-		for i := 0; i < players; i += 1 {
-			for j := 0; j < players; j += 1 {
-				for k := 0; k < players; k += 1 {
-					if i == j || j == k || k == i {
-						f = bf.And(f, bf.Not(bf.Var(groupName(i, j, k))))
-					}
-				}
-			}
-		}
-	*/
 
 	// Make sure we play everybody at least once.
 	for i := 0; i < players; i += 1 {
@@ -67,42 +57,23 @@ func solve(players int, size int) {
 				continue
 			}
 
-			f3 := bf.False
+			groups := make([]string, 0, players*(players-2))
+
 			for k := 0; k < players; k += 1 {
 				if k == i || k == j {
 					continue
 				}
 
-				f3 = bf.Or(f3, bf.Var(groupName(i, j, k)))
+				groups = append(groups, groupName(i, j, k))
 			}
 
-			f = bf.And(f, f3)
-		}
-	}
-
-	// Make sure we don't repeat an opponent.
-	for i := 0; i < players; i += 1 {
-		for j := 0; j < players; j += 1 {
-			if i == j {
-				continue
-			}
-
-			combos := make([]string, 0, players-2)
-			for k := 0; k < players; k += 1 {
-				if k == i || k == j {
-					continue
-				}
-
-				combos = append(combos, groupName(i, j, k))
-			}
-
-			f = bf.And(f, bf.Unique(combos...))
+			f = bf.And(f, bf.Unique(groups...))
 		}
 	}
 
 	model := bf.Solve(f)
 	if model == nil {
-		log.Fatal("no answer")
+		return fmt.Errorf("no solution")
 	}
 
 	for i := 0; i < players; i += 1 {
@@ -115,4 +86,19 @@ func solve(players int, size int) {
 		}
 	}
 
+	/*
+		out, err := os.Create("artifact.cnf")
+		if err != nil {
+			return err
+		}
+
+		defer out.Close()
+
+		err = bf.Dimacs(f, out)
+		if err != nil {
+			return err
+		}
+	*/
+
+	return nil
 }
